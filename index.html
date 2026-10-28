@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArUco marker detection</title>
+
+<video id="video" playsinline muted autoplay style="width: 100%"></video>
+<p><button id="start" disabled>Start camera</button></p>
+<pre id="out">Loading Python and OpenCV...</pre>
+
+<script type="module">
+import { loadPyodide } from 'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs';
+
+const video = document.getElementById('video');
+const start = document.getElementById('start');
+const out = document.getElementById('out');
+addEventListener('error', (e) => { out.textContent = e.message; });
+addEventListener('unhandledrejection', (e) => { out.textContent = e.reason; });
+
+const py = await loadPyodide();
+await py.loadPackage('opencv-python');
+py.FS.writeFile('aruco.py', await (await fetch('aruco.py')).text());
+const detect = py.runPython(`
+import json, numpy as np, aruco
+
+def detect(rgba, w, h):
+    image = np.asarray(rgba.to_py()).reshape(h, w, 4)
+    return json.dumps(aruco.detect(image), sort_keys=True)
+
+detect`);
+out.textContent = 'Ready.';
+start.disabled = false;
+
+start.onclick = async () => {
+  video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 4096 } });
+  const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const frame = () => {
+    const { videoWidth: w, videoHeight: h } = video;
+    if (w) {
+      ctx.canvas.width = w;
+      ctx.canvas.height = h;
+      ctx.drawImage(video, 0, 0);
+      out.textContent = `${w}x${h}\n` + detect(ctx.getImageData(0, 0, w, h).data, w, h);
+    }
+    requestAnimationFrame(frame);
+  };
+  frame();
+};
+</script>
